@@ -27,6 +27,8 @@ flutter:
   uses-material-design: true
   assets:               # Add this section for assets
     - assets/audio/space.mp3
+    - assets/audio/congrat.mp3
+    - assets/audio/hit.mp3
 
 
 

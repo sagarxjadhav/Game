@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'dart:math';
 import 'dart:async';
 import 'dart:ui';
-import 'dart:html' as html; // For web audio fallback
+import 'dart:html' as html; // For web audio
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vibration/vibration.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -84,6 +84,7 @@ class _GameScreenState extends State<GameScreen> {
   late GravitySwitchGame game;
   bool showSettings = false;
   int highScore = 0;
+  final AudioPlayer _celebrationPlayer = AudioPlayer();
 
   @override
   void initState() {
@@ -104,11 +105,18 @@ class _GameScreenState extends State<GameScreen> {
     int currentHighScore = prefs.getInt('highScore') ?? 0;
     if (finalScore > currentHighScore) {
       await prefs.setInt('highScore', finalScore);
+      await game._playCelebrationSound(_celebrationPlayer); // Will mute if sound is off
       setState(() {
         highScore = finalScore;
       });
-      game.showConfetti(); // Trigger confetti when new high score is set
+      game.showConfetti();
     }
+  }
+
+  @override
+  void dispose() {
+    _celebrationPlayer.dispose();
+    super.dispose();
   }
 
   @override
@@ -195,6 +203,14 @@ class _GameScreenState extends State<GameScreen> {
                           game.resetGame();
                         }),
                         const SizedBox(width: 20),
+                        _buildSettingsButton(
+                            game.isSoundOn ? Icons.volume_up : Icons.volume_off,
+                            Colors.cyan, () {
+                          setState(() {
+                            game.toggleSound();
+                          });
+                        }),
+                        const SizedBox(width: 20),
                         _buildSettingsButton(Icons.exit_to_app, Colors.red, () {
                           setState(() {
                             showSettings = false;
@@ -249,6 +265,7 @@ class GravitySwitchGame extends FlameGame
   bool gameOver = false;
   bool isPaused = false;
   bool gameStarted = false;
+  bool isSoundOn = true; // Flag to control all sounds
   late TextComponent scoreText;
   late TextComponent heartsText;
   late TextComponent previousScoreText;
@@ -268,11 +285,10 @@ class GravitySwitchGame extends FlameGame
       position: Vector2(16, 60),
       textRenderer: TextPaint(
         style: const TextStyle(
-          color: Colors.white,
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-          shadows: [Shadow(color: Colors.black, blurRadius: 2)],
-        ),
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
       ),
     );
     heartsText = TextComponent(
@@ -280,11 +296,10 @@ class GravitySwitchGame extends FlameGame
       position: Vector2(16, 90),
       textRenderer: TextPaint(
         style: const TextStyle(
-          color: Colors.red,
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-          shadows: [Shadow(color: Colors.black, blurRadius: 2)],
-        ),
+            color: Colors.red,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
       ),
     );
     previousScoreText = TextComponent(
@@ -292,11 +307,10 @@ class GravitySwitchGame extends FlameGame
       position: Vector2(16, 120),
       textRenderer: TextPaint(
         style: const TextStyle(
-          color: Colors.yellow,
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-          shadows: [Shadow(color: Colors.black, blurRadius: 2)],
-        ),
+            color: Colors.yellow,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
       ),
     );
     add(scoreText);
@@ -310,92 +324,85 @@ class GravitySwitchGame extends FlameGame
 
   Future<void> _initBackgroundMusic() async {
     if (kIsWeb) {
-      try {
-        _webAudio = html.AudioElement('assets/audio/space.mp3')
-          ..loop = true
-          ..load();
-        print("Web audio initialized with HTML Audio");
-      } catch (e) {
-        print("Error initializing web audio: $e");
-      }
+      _webAudio = html.AudioElement('assets/audio/space.mp3')
+        ..loop = true
+        ..load();
     } else {
-      try {
-        await _audioPlayer.setSource(AssetSource('audio/space.mp3'));
-        await _audioPlayer.setReleaseMode(ReleaseMode.loop);
-        print("Android audio initialized with audioplayers");
-      } catch (e) {
-        print("Error initializing Android audio: $e");
-      }
+      await _audioPlayer.setSource(AssetSource('audio/space.mp3'));
+      await _audioPlayer.setReleaseMode(ReleaseMode.loop);
     }
   }
 
   Future<void> _playBackgroundMusic() async {
+    if (!isSoundOn) return; // Mute background music if sound is off
     if (kIsWeb && _webAudio != null) {
-      try {
-        _webAudio!.play();
-        print("Web background music playing");
-      } catch (e) {
-        print("Error playing web audio: $e");
-      }
+      _webAudio!.play();
     } else {
-      try {
-        await _audioPlayer.resume();
-        print("Android background music playing");
-      } catch (e) {
-        print("Error playing Android audio: $e");
-      }
+      await _audioPlayer.resume();
     }
   }
 
   Future<void> _pauseBackgroundMusic() async {
     if (kIsWeb && _webAudio != null) {
-      try {
-        _webAudio!.pause();
-        print("Web background music paused");
-      } catch (e) {
-        print("Error pausing web audio: $e");
-      }
+      _webAudio!.pause();
     } else {
-      try {
-        await _audioPlayer.pause();
-        print("Android background music paused");
-      } catch (e) {
-        print("Error pausing Android audio: $e");
-      }
+      await _audioPlayer.pause();
     }
   }
 
   Future<void> _stopBackgroundMusic() async {
     if (kIsWeb && _webAudio != null) {
-      try {
-        _webAudio!.pause();
-        _webAudio!.currentTime = 0;
-        print("Web background music stopped");
-      } catch (e) {
-        print("Error stopping web audio: $e");
-      }
+      _webAudio!.pause();
+      _webAudio!.currentTime = 0;
     } else {
-      try {
-        await _audioPlayer.stop();
-        print("Android background music stopped");
-      } catch (e) {
-        print("Error stopping Android audio: $e");
-      }
+      await _audioPlayer.stop();
+    }
+  }
+
+  Future<void> _playHitSound() async {
+    if (!isSoundOn) return; // Mute hit sound if sound is off
+    await _pauseBackgroundMusic();
+    if (kIsWeb) {
+      final hitAudio = html.AudioElement('assets/audio/hit.mp3');
+      hitAudio.onEnded.listen((event) {
+        _playBackgroundMusic();
+      });
+      hitAudio.play();
+    } else {
+      await _audioPlayer.play(AssetSource('audio/hit.mp3'));
+      await Future.delayed(const Duration(milliseconds: 1000));
+      await _playBackgroundMusic();
+    }
+  }
+
+  Future<void> _playCelebrationSound(AudioPlayer celebrationPlayer) async {
+    if (!isSoundOn) return; // Mute celebration sound if sound is off
+    await _pauseBackgroundMusic();
+    if (kIsWeb) {
+      final celebrationAudio = html.AudioElement('assets/audio/congrat.mp3');
+      celebrationAudio.onEnded.listen((event) {
+        _playBackgroundMusic();
+      });
+      celebrationAudio.play();
+    } else {
+      await celebrationPlayer.play(AssetSource('audio/congrat.mp3'));
+      await Future.delayed(const Duration(seconds: 2));
+      await _playBackgroundMusic();
+    }
+  }
+
+  void toggleSound() {
+    isSoundOn = !isSoundOn;
+    if (!isSoundOn) {
+      _stopBackgroundMusic(); // Stop all sound when muted
+    } else if (gameStarted && !isPaused) {
+      _playBackgroundMusic(); // Resume background music if game is active
     }
   }
 
   Future<void> _triggerVibration() async {
-    if (!kIsWeb) {
-      try {
-        if (await Vibration.hasVibrator() ?? false) {
-          Vibration.vibrate(duration: 100);
-          print("Vibration triggered");
-        } else {
-          print("Device has no vibrator");
-        }
-      } catch (e) {
-        print("Error triggering vibration: $e");
-      }
+    if (!kIsWeb && (await Vibration.hasVibrator() ?? false)) {
+      Vibration.vibrate(duration: 100);
     }
   }
 
@@ -404,13 +411,11 @@ class GravitySwitchGame extends FlameGame
     final random = Random();
     for (int i = 0; i < confettiCount; i++) {
       final x = random.nextDouble() * size.x;
-      final y = -random.nextDouble() * size.y / 2; // Start above screen
+      final y = -random.nextDouble() * size.y / 2;
       final confetti = ConfettiParticle(
         position: Vector2(x, y),
         velocity: Vector2(
-          random.nextDouble() * 200 - 100, // Random horizontal velocity
-          random.nextDouble() * 300 + 100, // Downward velocity
-        ),
+            random.nextDouble() * 200 - 100, random.nextDouble() * 300 + 100),
         color: Colors.primaries[random.nextInt(Colors.primaries.length)],
       );
       add(confetti);
@@ -447,6 +452,7 @@ class GravitySwitchGame extends FlameGame
     if (spaceship.y <= 0 || spaceship.y + spaceship.size.y >= size.y) {
       loseHeart();
       _triggerVibration();
+      _playHitSound();
     }
 
     for (var meteoroid in meteoroids.toList()) {
@@ -483,11 +489,10 @@ class GravitySwitchGame extends FlameGame
       position: Vector2(16, 60),
       textRenderer: TextPaint(
         style: const TextStyle(
-          color: Colors.white,
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-          shadows: [Shadow(color: Colors.black, blurRadius: 2)],
-        ),
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
       ),
     );
     heartsText = TextComponent(
@@ -495,11 +500,10 @@ class GravitySwitchGame extends FlameGame
       position: Vector2(16, 90),
       textRenderer: TextPaint(
         style: const TextStyle(
-          color: Colors.red,
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-          shadows: [Shadow(color: Colors.black, blurRadius: 2)],
-        ),
+            color: Colors.red,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
       ),
     );
     previousScoreText = TextComponent(
@@ -507,11 +511,10 @@ class GravitySwitchGame extends FlameGame
       position: Vector2(16, 120),
       textRenderer: TextPaint(
         style: const TextStyle(
-          color: Colors.yellow,
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-          shadows: [Shadow(color: Colors.black, blurRadius: 2)],
-        ),
+            color: Colors.yellow,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
       ),
     );
     add(scoreText);
@@ -551,11 +554,7 @@ class GravitySwitchGame extends FlameGame
       add(spaceship);
       heartsText.text = '♥ $hearts';
       final playButton = PlayButton(
-        position: Vector2(size.x / 2, size.y / 2),
-        onPressed: () {
-          startGame();
-        },
-      );
+          position: Vector2(size.x / 2, size.y / 2), onPressed: startGame);
       playButton.priority = 100;
       add(playButton);
       isPaused = true;
@@ -566,19 +565,18 @@ class GravitySwitchGame extends FlameGame
     if (!gameOver) {
       gameOver = true;
       isPaused = true;
-      onGameEnd(score); // This will trigger confetti if new high score
+      onGameEnd(score);
       children
           .where((child) => child is! Star)
           .forEach((child) => child.removeFromParent());
       meteoroids.clear();
       collectibles.clear();
       final playButton = PlayButton(
-        position: Vector2(size.x / 2, size.y / 2),
-        onPressed: () {
-          resetGame();
-          startGame();
-        },
-      );
+          position: Vector2(size.x / 2, size.y / 2),
+          onPressed: () {
+            resetGame();
+            startGame();
+          });
       playButton.priority = 100;
       add(playButton);
       _stopBackgroundMusic();
@@ -631,11 +629,10 @@ class GravitySwitchGame extends FlameGame
                 return Text(
                   '$value',
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 80,
-                    fontWeight: FontWeight.bold,
-                    shadows: [Shadow(color: Colors.blue, blurRadius: 8)],
-                  ),
+                      color: Colors.white,
+                      fontSize: 80,
+                      fontWeight: FontWeight.bold,
+                      shadows: [Shadow(color: Colors.blue, blurRadius: 8)]),
                 );
               },
             ),
@@ -735,6 +732,7 @@ class Spaceship extends PositionComponent with CollisionCallbacks {
       velocity = Vector2.zero();
       game.loseHeart();
       game._triggerVibration();
+      game._playHitSound();
     } else if (other is Collectible) {
       other.removeFromParent();
       game.score += 50;
@@ -753,7 +751,15 @@ class Meteoroid extends PositionComponent with CollisionCallbacks {
   Meteoroid(this.game, double x, double y) : super(size: meteoroidSize) {
     position = Vector2(x, y);
     anchor = Anchor.center;
-    add(RectangleHitbox(size: meteoroidSize));
+    final center = size / 2;
+    final hitboxVertices = [
+      Vector2(center.x + size.x * 0.4, center.y),
+      Vector2(center.x + size.x * 0.3, center.y - size.y * 0.4),
+      Vector2(center.x - size.x * 0.3, center.y - size.y * 0.4),
+      Vector2(center.x - size.x * 0.4, center.y + size.y * 0.2),
+      Vector2(center.x + size.x * 0.1, center.y + size.y * 0.4),
+    ];
+    add(PolygonHitbox(hitboxVertices));
   }
 
   @override
@@ -854,20 +860,15 @@ class PlayButton extends PositionComponent with TapCallbacks {
   @override
   void render(Canvas canvas) {
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 0, size.x, size.y),
-        const Radius.circular(8),
-      ),
-      paint,
-    );
-
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(0, 0, size.x, size.y), const Radius.circular(8)),
+        paint);
     final textPaint = TextPaint(
       style: const TextStyle(
-        color: Colors.white,
-        fontSize: 24,
-        fontWeight: FontWeight.bold,
-        shadows: [Shadow(color: Colors.black, blurRadius: 2)],
-      ),
+          color: Colors.white,
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+          shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
     );
     textPaint.render(canvas, 'Play', size / 2, anchor: Anchor.center);
   }
@@ -882,30 +883,27 @@ class PlayButton extends PositionComponent with TapCallbacks {
 class ConfettiParticle extends PositionComponent {
   final Vector2 velocity;
   final Color color;
-  double life = 3.0; // Seconds of life
+  double life = 3.0;
   static const double gravity = 300;
 
-  ConfettiParticle({
-    required Vector2 position,
-    required this.velocity,
-    required this.color,
-  }) : super(position: position, size: Vector2(8, 8));
+  ConfettiParticle(
+      {required Vector2 position, required this.velocity, required this.color})
+      : super(position: position, size: Vector2(8, 8));
 
   @override
   void update(double dt) {
     super.update(dt);
-    velocity.y += gravity * dt; // Apply gravity
-    position += velocity * dt; // Update position
+    velocity.y += gravity * dt;
+    position += velocity * dt;
     life -= dt;
     if (life <= 0 || position.y > (parent as GravitySwitchGame).size.y) {
-      removeFromParent(); // Remove when life ends or off-screen
+      removeFromParent();
     }
   }
 
   @override
   void render(Canvas canvas) {
     final paint = Paint()..color = color;
-    canvas.drawRect(
-        Rect.fromLTWH(0, 0, size.x, size.y), paint); // Draw confetti piece
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), paint);
   }
 }
